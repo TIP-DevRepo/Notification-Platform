@@ -1,18 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { theme } from "./theme";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Dashboard } from "./views/Dashboard";
 import { Templates } from "./views/Templates";
 import { Send } from "./views/Send";
 import { Settings } from "./views/Settings";
-import { INITIAL_TEMPLATES, INITIAL_HISTORY } from "./data/initialData";
+import { INITIAL_HISTORY } from "./data/initialData";
 
 export default function App() {
   const [view, setView] = useState("dashboard");
-  const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
+  const [templates, setTemplates] = useState([]);
   const [history, setHistory] = useState(INITIAL_HISTORY);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+
+  // Load templates from Supabase on startup
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const response = await fetch("/api/templates");
+        const result = await response.json();
+        if (result.data) {
+          setTemplates(result.data);
+        }
+      } catch (error) {
+        console.error("Failed to load templates:", error);
+      } finally {
+        setLoadingTemplates(false);
+      }
+    };
+
+    fetchTemplates();
+  }, []);
 
   return (
     <div style={{ display: "flex", height: "100vh", background: theme.bg }}>
@@ -23,7 +43,11 @@ export default function App() {
           <Dashboard templates={templates} history={history} setView={setView} />
         )}
         {view === "templates" && (
-          <Templates templates={templates} setTemplates={setTemplates} />
+          <Templates
+            templates={templates}
+            setTemplates={setTemplates}
+            loading={loadingTemplates}
+          />
         )}
         {view === "send" && (
           <Send templates={templates} setHistory={setHistory} />

@@ -8,29 +8,70 @@ import { Modal } from "../../components/ui/Modal";
 import { TemplateModal } from "./TemplateModal";
 import { IconPlus, IconEdit, IconTrash, IconFile, IconSMS, IconMail } from "../../icons";
 
-export const Templates = ({ templates, setTemplates }) => {
+export const Templates = ({ templates, setTemplates, loading }) => {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = filter === "all" ? templates : templates.filter((t) => t.type === filter);
 
-  const handleSave = (form) => {
-    const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    if (editing?.id) {
-      setTemplates((prev) => prev.map((t) => (t.id === editing.id ? { ...t, ...form } : t)));
-    } else {
-      setTemplates((prev) => [...prev, { ...form, id: Date.now(), created: today }]);
+  const handleSave = async (form) => {
+    setSaving(true);
+    try {
+      if (editing?.id) {
+        // Update existing template
+        const response = await fetch(`/api/templates/${editing.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        setTemplates((prev) => prev.map((t) => t.id === editing.id ? result.data : t));
+      } else {
+        // Create new template
+        const response = await fetch("/api/templates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        setTemplates((prev) => [result.data, ...prev]);
+      }
+      setShowModal(false);
+      setEditing(null);
+    } catch (error) {
+      console.error("Failed to save template:", error);
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
-    setEditing(null);
   };
 
-  const handleDelete = (id) => {
-    setTemplates((prev) => prev.filter((t) => t.id !== id));
-    setDeleteConfirm(null);
+  const handleDelete = async (id) => {
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/templates/${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Failed to delete");
+      setTemplates((prev) => prev.filter((t) => t.id !== id));
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error("Failed to delete template:", error);
+    } finally {
+      setDeleting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
+        <p style={{ fontSize: 14, color: theme.textSecondary, fontFamily: font }}>Loading templates…</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -79,15 +120,7 @@ export const Templates = ({ templates, setTemplates }) => {
 
       {/* Template List */}
       {filtered.length === 0 ? (
-        <div
-          style={{
-            background: theme.surface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 10,
-            padding: "48px 24px",
-            textAlign: "center",
-          }}
-        >
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: "48px 24px", textAlign: "center" }}>
           <IconFile size={32} color={theme.textMuted} />
           <p style={{ fontSize: 15, fontWeight: 500, color: theme.text, margin: "16px 0 6px", fontFamily: font }}>
             No templates yet
@@ -115,62 +148,28 @@ export const Templates = ({ templates, setTemplates }) => {
               onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg)}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <span
-                style={{
-                  padding: 9,
-                  background: t.type === "sms" ? theme.sms.bg : theme.email.bg,
-                  borderRadius: 8,
-                  display: "flex",
-                  flexShrink: 0,
-                }}
-              >
-                {t.type === "sms" ? (
-                  <IconSMS size={16} color={theme.sms.text} />
-                ) : (
-                  <IconMail size={16} color={theme.email.text} />
-                )}
+              <span style={{ padding: 9, background: t.type === "sms" ? theme.sms.bg : theme.email.bg, borderRadius: 8, display: "flex", flexShrink: 0 }}>
+                {t.type === "sms" ? <IconSMS size={16} color={theme.sms.text} /> : <IconMail size={16} color={theme.email.text} />}
               </span>
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: theme.text, margin: 0, fontFamily: font }}>
-                    {t.name}
-                  </p>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: theme.text, margin: 0, fontFamily: font }}>{t.name}</p>
                   <Badge type={t.type} />
                 </div>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: theme.textSecondary,
-                    margin: 0,
-                    fontFamily: font,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    maxWidth: 420,
-                  }}
-                >
+                <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0, fontFamily: font, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 420 }}>
                   {t.type === "email" ? `Subject: ${t.subject}` : t.body}
                 </p>
               </div>
 
               <p style={{ fontSize: 12, color: theme.textMuted, fontFamily: font, flexShrink: 0 }}>
-                {t.created}
+                {new Date(t.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </p>
 
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <button
                   onClick={() => { setEditing(t); setShowModal(true); }}
-                  style={{
-                    display: "flex",
-                    padding: 7,
-                    background: "none",
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    color: theme.textSecondary,
-                    transition: "all 0.15s",
-                  }}
+                  style={{ display: "flex", padding: 7, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, cursor: "pointer", color: theme.textSecondary, transition: "all 0.15s" }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#AAAAAA"; e.currentTarget.style.color = theme.text; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary; }}
                 >
@@ -178,16 +177,7 @@ export const Templates = ({ templates, setTemplates }) => {
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(t.id)}
-                  style={{
-                    display: "flex",
-                    padding: 7,
-                    background: "none",
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    color: theme.textSecondary,
-                    transition: "all 0.15s",
-                  }}
+                  style={{ display: "flex", padding: 7, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, cursor: "pointer", color: theme.textSecondary, transition: "all 0.15s" }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.error.text; e.currentTarget.style.color = theme.error.text; e.currentTarget.style.background = theme.error.bg; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary; e.currentTarget.style.background = "none"; }}
                 >
@@ -205,6 +195,7 @@ export const Templates = ({ templates, setTemplates }) => {
           template={editing}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditing(null); }}
+          saving={saving}
         />
       )}
 
@@ -217,14 +208,14 @@ export const Templates = ({ templates, setTemplates }) => {
           footer={
             <>
               <Btn variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Btn>
-              <Btn variant="danger" onClick={() => handleDelete(deleteConfirm)} icon={<IconTrash size={14} />}>
-                Delete Template
+              <Btn variant="danger" onClick={() => handleDelete(deleteConfirm)} disabled={deleting} icon={<IconTrash size={14} />}>
+                {deleting ? "Deleting…" : "Delete Template"}
               </Btn>
             </>
           }
         >
           <p style={{ fontSize: 14, color: theme.textSecondary, fontFamily: font, margin: 0, lineHeight: 1.6 }}>
-            Are you sure you want to delete this template? Any unsent messages using it will not be affected.
+            Are you sure you want to delete this template? This cannot be undone.
           </p>
         </Modal>
       )}
